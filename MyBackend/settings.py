@@ -29,7 +29,6 @@ ALLOWED_HOSTS = []
 
 
 # Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -37,8 +36,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'corsheaders',
-    'registration',
+    'corsheaders',  # Cross-Origin Resource Sharing for React frontend
+    'registration',  # Custom app for parking registration system
 ]
 
 MIDDLEWARE = [
@@ -124,6 +123,7 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Add this at the very bottom of settings.py
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
+# CORS (Cross-Origin Resource Sharing) Configuration
+# Allows the React frontend to communicate with this Django backend
+CORS_ALLOW_ALL_ORIGINS = True  # Allow requests from any origin (development only)
+CORS_ALLOW_CREDENTIALS = True  # Allow cookies and authentication headers
