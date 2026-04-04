@@ -33,6 +33,8 @@ class VehicleApplication(models.Model):
     owner_name = models.TextField()  # DES encrypted owner name
     plate_number = models.TextField()  # DES encrypted plate number
     vehicle_type = models.CharField(max_length=50)  # '2-Wheels', '4-Wheels', 'Service'
+    payment_method = models.CharField(max_length=50, blank=True, null=True)
+    payment_reference = models.CharField(max_length=100, blank=True, null=True)
 
     # Application Status
     status = models.CharField(max_length=20, default='Pending')  # 'Pending', 'Approved', 'Rejected'
@@ -49,4 +51,38 @@ class VehicleApplication(models.Model):
 
     def __str__(self):
         return f"{self.plate_number} ({self.status})"
+
+
+class ParkingReservation(models.Model):
+    """
+    Model for parking spot reservations with admin approval workflow.
+    Allows multiple spots to be reserved for organizations and events.
+    """
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('denied', 'Denied'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    # User and Sticker Information
+    applicant_username = models.CharField(max_length=100)  # Links to UserRegistration
+    sticker_id = models.CharField(max_length=20)  # The sticker ID making the reservation
+
+    # Reservation Details
+    reserved_spots = models.TextField()  # JSON array of spot IDs: "[1, 2, 3]"
+    reservation_reason = models.TextField()  # Why multiple spots are being reserved (org name, event, etc)
+    reserved_for_datetime = models.DateTimeField()  # When the user wants to park/use the spots
+
+    # Status and Admin Workflow
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    admin_notes = models.TextField(blank=True, null=True)  # Notes from admin when approving/denying
+
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    approved_at = models.DateTimeField(blank=True, null=True)
+    approved_by_username = models.CharField(max_length=100, blank=True, null=True)  # Admin who approved
+
+    def __str__(self):
+        return f"{self.applicant_username} - {len(self.reserved_spots.split(','))} spots - {self.status}"
     

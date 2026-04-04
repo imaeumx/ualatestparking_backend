@@ -20,4 +20,14 @@ urlpatterns = [
     # User actions
     path('update-profile/', views.update_profile),  # Update user profile/settings
     path('mark-notifications-read/', views.mark_notifications_read),  # Mark notifications as read
+
+    # Parking Reservations (with admin approval workflow)
+    path('submit-reservation/', views.submit_reservation),  # User: submit multi-spot reservation
+    path('user-reservations/', views.get_user_reservations),  # User: get own reservations
+    path('pending-reservations/', views.get_pending_reservations),  # Admin: get pending reservations
+    path('all-reservations/', views.get_all_reservations),  # Admin: get all reservations
+    path('approve-reservation/', views.approve_reservation),  # Admin: approve reservation
+    path('deny-reservation/', views.deny_reservation),  # Admin: deny reservation
+    path('update-reservation-admin/', views.update_reservation_admin),  # Admin: edit reservation status/notes
+    path('create-personnel-account/', views.create_personnel_account),  # Root admin: create admin/guard
 ]
