@@ -24,6 +24,7 @@ urlpatterns = [
     # Parking Reservations (with admin approval workflow)
     path('submit-reservation/', views.submit_reservation),  # User: submit multi-spot reservation
     path('user-reservations/', views.get_user_reservations),  # User: get own reservations
+    path('approved-reservations-map/', views.get_approved_reservations_map),  # Authenticated: get approved reservations for map sync
     path('pending-reservations/', views.get_pending_reservations),  # Admin: get pending reservations
     path('all-reservations/', views.get_all_reservations),  # Admin: get all reservations
     path('approve-reservation/', views.approve_reservation),  # Admin: approve reservation

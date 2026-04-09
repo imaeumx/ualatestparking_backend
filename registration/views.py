@@ -377,6 +377,7 @@ def update_status(request):
 
             v = VehicleApplication.objects.get(id=data.get('id'))
             v.status = data.get('status')
+            v.admin_notes = (data.get('admin_notes') or '').strip()
             v.is_seen = False
 
             # Ensure approved records always have a sticker and semester expiration.
@@ -501,6 +502,30 @@ def submit_reservation(request):
                     'status': 'error',
                     'message': 'Missing required fields: username, reserved_spots, reason, datetime'
                 }, status=400)
+
+            if not isinstance(reserved_spots, list):
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'reserved_spots must be a list of spot numbers.'
+                }, status=400)
+
+            # Normalize to unique integer spot IDs so overlap checks are reliable.
+            normalized_reserved_spots = []
+            for spot in reserved_spots:
+                try:
+                    normalized_reserved_spots.append(int(spot))
+                except (TypeError, ValueError):
+                    return JsonResponse({
+                        'status': 'error',
+                        'message': 'reserved_spots contains invalid spot number(s).'
+                    }, status=400)
+
+            normalized_reserved_spots = sorted(set(normalized_reserved_spots))
+            if not normalized_reserved_spots:
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Please provide at least one valid spot number.'
+                }, status=400)
             
             # Verify user exists
             user = UserRegistration.objects.get(username=username)
@@ -538,10 +563,39 @@ def submit_reservation(request):
             else:
                 # School/Org related bulk reservations can be requested by representative names.
                 sticker_for_db = 'N/A'
+
+            # Block submitting a reservation for spots already approved for another user.
+            conflict_spots = set()
+            # This server-side guard prevents stale clients from double-booking the same spots.
+            approved_other_reservations = ParkingReservation.objects.filter(status='approved').exclude(applicant_username=username)
+            for existing_reservation in approved_other_reservations:
+                try:
+                    existing_spots = json.loads(existing_reservation.reserved_spots or '[]')
+                except json.JSONDecodeError:
+                    existing_spots = []
+
+                existing_spot_ids = set()
+                for spot in existing_spots:
+                    try:
+                        existing_spot_ids.add(int(spot))
+                    except (TypeError, ValueError):
+                        continue
+
+                overlap = existing_spot_ids.intersection(normalized_reserved_spots)
+                if overlap:
+                    conflict_spots.update(overlap)
+
+            if conflict_spots:
+                sorted_conflicts = sorted(conflict_spots)
+                return JsonResponse({
+                    'status': 'error',
+                    'message': f"Spot(s) {', '.join(str(spot) for spot in sorted_conflicts)} are already reserved by another user.",
+                    'conflict_spots': sorted_conflicts
+                }, status=409)
             
             # Convert reserved_spots list to JSON string
             import json as json_lib
-            reserved_spots_str = json_lib.dumps(reserved_spots)
+            reserved_spots_str = json_lib.dumps(normalized_reserved_spots)
             
             # Create reservation with pending status
             reservation = ParkingReservation.objects.create(
@@ -601,6 +655,33 @@ def get_user_reservations(request):
             except:
                 res['reserved_spots'] = []
         
+        return JsonResponse(reservations, safe=False)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+def get_approved_reservations_map(request):
+    """
+    Get all approved reservations for parking map synchronization.
+    Any authenticated user can read this so all users see reserved slots.
+    """
+    try:
+        auth_token = request.GET.get('auth_token')
+        token_payload = get_token_payload(auth_token)
+        if not token_payload:
+            return JsonResponse({'status': 'error', 'message': 'Unauthorized action.'}, status=403)
+
+        reservations = list(ParkingReservation.objects.filter(
+            status='approved'
+        ).values().order_by('-created_at'))
+
+        # Always return a list so the parking map can consume this payload consistently.
+        for res in reservations:
+            try:
+                res['reserved_spots'] = json.loads(res['reserved_spots'])
+            except Exception:
+                res['reserved_spots'] = []
+
         return JsonResponse(reservations, safe=False)
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)

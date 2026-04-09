@@ -38,6 +38,7 @@ class VehicleApplication(models.Model):
 
     # Application Status
     status = models.CharField(max_length=20, default='Pending')  # 'Pending', 'Approved', 'Rejected'
+    admin_notes = models.TextField(blank=True, null=True)  # Notes from admin when reviewing applications
     is_seen = models.BooleanField(default=True)  # Whether user has seen status update
 
     # Sticker Information (Set upon approval)
