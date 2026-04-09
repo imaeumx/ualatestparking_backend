@@ -612,7 +612,7 @@ def get_pending_reservations(request):
     Only returns reservations with status='pending'.
     """
     try:
-        auth_payload = authorize_request(request, None, ADMIN_ROLES)
+        auth_payload = authorize_request(request, None, PERSONNEL_ROLES)
         if not auth_payload:
             return JsonResponse({'status': 'error', 'message': 'Unauthorized action.'}, status=403)
 
@@ -638,7 +638,7 @@ def get_all_reservations(request):
     Returns pending, approved, and denied records.
     """
     try:
-        auth_payload = authorize_request(request, None, ADMIN_ROLES)
+        auth_payload = authorize_request(request, None, PERSONNEL_ROLES)
         if not auth_payload:
             return JsonResponse({'status': 'error', 'message': 'Unauthorized action.'}, status=403)
 
@@ -762,7 +762,7 @@ def update_reservation_admin(request):
 
     try:
         data = json.loads(request.body)
-        auth_payload = authorize_request(request, data, ADMIN_ROLES)
+        auth_payload = authorize_request(request, data, PERSONNEL_ROLES)
         if not auth_payload:
             return JsonResponse({'status': 'error', 'message': 'Unauthorized action.'}, status=403)
 
