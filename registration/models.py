@@ -85,5 +85,13 @@ class ParkingReservation(models.Model):
     approved_by_username = models.CharField(max_length=100, blank=True, null=True)  # Admin who approved
 
     def __str__(self):
-        return f"{self.applicant_username} - {len(self.reserved_spots.split(','))} spots - {self.status}"
+        try:
+            import json
+
+            spots = json.loads(self.reserved_spots or '[]')
+            spot_count = len(spots) if isinstance(spots, list) else 0
+        except Exception:
+            spot_count = 0
+
+        return f"{self.applicant_username} - {spot_count} spots - {self.status}"
     

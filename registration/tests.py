@@ -60,6 +60,18 @@ class RegistrationApiTests(TestCase):
 		self.assertEqual(payload['user']['username'], 'student1')
 		self.assertTrue(payload['user']['auth_token'])
 
+	def test_login_user_is_case_insensitive(self):
+		response = self.client.post(
+			'/api/login/',
+			data=json.dumps({'username': 'STUDENT1', 'password': 'PassWord1'}),
+			content_type='application/json',
+		)
+
+		self.assertEqual(response.status_code, 200)
+		payload = response.json()
+		self.assertEqual(payload['status'], 'success')
+		self.assertEqual(payload['user']['username'], 'student1')
+
 	def test_create_personnel_account_requires_root_admin(self):
 		response = self.client.post(
 			'/api/create-personnel-account/',

@@ -16,6 +16,17 @@ AUTH_TOKEN_SALT = 'ua-parking-auth'
 AUTH_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 12
 
 
+def normalize_username(value):
+    return (value or '').strip()
+
+
+def get_user_by_username(username):
+    normalized_username = normalize_username(username)
+    if not normalized_username:
+        raise UserRegistration.DoesNotExist()
+    return UserRegistration.objects.get(username__iexact=normalized_username)
+
+
 def generate_next_sticker_id():
     """
     Generate the next unique sticker ID in UA-XXX format.
@@ -121,13 +132,13 @@ def login_user(request):
 
     try:
         data = json.loads(request.body)
-        username = data.get('username')
+        username = normalize_username(data.get('username'))
         incoming_pass = data.get('password')
 
         if not username or not incoming_pass:
             return JsonResponse({'status': 'error', 'message': 'Username and password are required.'}, status=400)
 
-        if username == 'rootadmin' and incoming_pass == 'rootadmin123':
+        if username.lower() == 'rootadmin' and incoming_pass == 'rootadmin123':
             root_role = 'root_admin'
             return JsonResponse({
                 'status': 'success',
@@ -142,7 +153,7 @@ def login_user(request):
             })
 
         try:
-            user = UserRegistration.objects.get(username=username)
+            user = get_user_by_username(username)
         except UserRegistration.DoesNotExist:
             return JsonResponse({'status': 'error', 'message': 'User not found'}, status=404)
 
@@ -200,7 +211,7 @@ def create_personnel_account(request):
                 'message': 'Password must be at least 8 characters long and include at least one uppercase letter and one number.'
             }, status=400)
 
-        if UserRegistration.objects.filter(username=username).exists():
+        if UserRegistration.objects.filter(username__iexact=username).exists():
             return JsonResponse({'status': 'error', 'message': 'Username already exists.'}, status=400)
 
         UserRegistration.objects.create(
@@ -227,19 +238,19 @@ def update_profile(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            target_username = (data.get('username') or '').strip()
+            target_username = normalize_username(data.get('username'))
             auth_token = data.get('auth_token')
             token_payload = get_token_payload(auth_token)
             if not token_payload:
                 return JsonResponse({'status': 'error', 'message': 'Unauthorized action.'}, status=403)
 
-            requester_username = (token_payload.get('username') or '').strip()
+            requester_username = normalize_username(token_payload.get('username'))
             requester_role = (token_payload.get('role') or '').strip().lower()
-            can_update = requester_username == target_username or requester_role in PERSONNEL_ROLES
+            can_update = requester_username.lower() == target_username.lower() or requester_role in PERSONNEL_ROLES
             if not can_update:
                 return JsonResponse({'status': 'error', 'message': 'Unauthorized action.'}, status=403)
 
-            user = UserRegistration.objects.get(username=target_username)
+            user = get_user_by_username(target_username)
 
             user.identifier = data.get('identifier')
 
@@ -308,15 +319,15 @@ def submit_vehicle(request):
     if request.method == 'POST':
         try:
             data = json.loads(request.body)
-            username = (data.get('username') or '').strip()
+            username = normalize_username(data.get('username'))
             auth_token = data.get('auth_token')
             token_payload = get_token_payload(auth_token)
             if not token_payload:
                 return JsonResponse({'status': 'error', 'message': 'Unauthorized action.'}, status=403)
 
-            requester_username = (token_payload.get('username') or '').strip()
+            requester_username = normalize_username(token_payload.get('username'))
             requester_role = (token_payload.get('role') or '').strip().lower()
-            can_submit_for_user = requester_username == username or requester_role in PERSONNEL_ROLES
+            can_submit_for_user = requester_username.lower() == username.lower() or requester_role in PERSONNEL_ROLES
             if not can_submit_for_user:
                 return JsonResponse({'status': 'error', 'message': 'Unauthorized action.'}, status=403)
 
@@ -336,7 +347,7 @@ def submit_vehicle(request):
                     'message': 'Plate number already exists. Please use a unique plate number.'
                 }, status=400)
 
-            user_profile = UserRegistration.objects.get(username=username)
+            user_profile = get_user_by_username(username)
 
             VehicleApplication.objects.create(
                 applicant_username=username,
@@ -528,7 +539,7 @@ def submit_reservation(request):
                 }, status=400)
             
             # Verify user exists
-            user = UserRegistration.objects.get(username=username)
+            user = get_user_by_username(username)
 
             category = (reservation_category or '').strip().lower()
             requires_sticker = category in ('', 'single')
@@ -542,7 +553,7 @@ def submit_reservation(request):
 
                 # Verify sticker is approved, belongs to user, and valid for current semester.
                 sticker_record = VehicleApplication.objects.filter(
-                    applicant_username=username,
+                    applicant_username__iexact=username,
                     sticker_id=sticker_id.upper(),
                     status='Approved'
                 ).first()
@@ -631,21 +642,21 @@ def get_user_reservations(request):
     Includes pending, approved, denied, and cancelled reservations.
     """
     try:
-        username = (request.GET.get('username') or '').strip()
+        username = normalize_username(request.GET.get('username'))
         auth_token = request.GET.get('auth_token')
         token_payload = get_token_payload(auth_token)
 
         if not username or not token_payload:
             return JsonResponse({'status': 'error', 'message': 'Unauthorized action.'}, status=403)
 
-        requester_username = (token_payload.get('username') or '').strip()
+        requester_username = normalize_username(token_payload.get('username'))
         requester_role = (token_payload.get('role') or '').strip().lower()
-        can_view = requester_username == username or requester_role in PERSONNEL_ROLES
+        can_view = requester_username.lower() == username.lower() or requester_role in PERSONNEL_ROLES
         if not can_view:
             return JsonResponse({'status': 'error', 'message': 'Unauthorized action.'}, status=403)
         
         reservations = list(ParkingReservation.objects.filter(
-            applicant_username=username
+            applicant_username__iexact=username
         ).values().order_by('-created_at'))
         
         # Convert reserved_spots from JSON string to list
