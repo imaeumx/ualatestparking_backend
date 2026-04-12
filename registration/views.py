@@ -1,8 +1,13 @@
 import json
+import base64
+import secrets
 import re
+from Crypto.Cipher import DES
+from Crypto.Util.Padding import pad, unpad
 from datetime import date
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
 from .models import UserRegistration, VehicleApplication, ParkingReservation
 from django.utils import timezone
 from django.core import signing
@@ -120,6 +125,89 @@ def authorize_request(request, data, allowed_roles):
     return payload
 
 
+def get_des_key_bytes():
+    """Return an 8-byte DES key derived from settings.DES_SECRET_KEY."""
+    # The shared key is stored as base64 in env (.env). If decoding fails,
+    # we treat it as raw text and normalize to 8 bytes for DES compatibility.
+    raw_key = (getattr(settings, 'DES_SECRET_KEY', '') or '').strip()
+    if not raw_key:
+        return b'UA-KEY-1'
+
+    try:
+        key_bytes = base64.b64decode(raw_key, validate=True)
+    except Exception:
+        key_bytes = raw_key.encode('utf-8', errors='ignore')
+
+    if len(key_bytes) < 8:
+        key_bytes = key_bytes.ljust(8, b'0')
+    return key_bytes[:8]
+
+
+def encrypt_des_text(plain_text):
+    """Encrypt plain text with DES-CBC and a random IV."""
+    normalized_value = '' if plain_text is None else str(plain_text)
+    if normalized_value == '':
+        return ''
+
+    # CBC requires a random IV per encryption call so the same input does not
+    # produce the same ciphertext repeatedly.
+    iv = secrets.token_bytes(8)
+    cipher = DES.new(get_des_key_bytes(), DES.MODE_CBC, iv=iv)
+    encrypted = cipher.encrypt(pad(normalized_value.encode('utf-8'), DES.block_size))
+    # We prepend IV to ciphertext so decryption can reconstruct the same state.
+    return base64.b64encode(iv + encrypted).decode('ascii')
+
+
+def decrypt_des_text(cipher_text):
+    """Decrypt DES-CBC payloads; fall back to the original value for legacy plain text."""
+    normalized_value = '' if cipher_text is None else str(cipher_text)
+    if normalized_value == '':
+        return ''
+
+    try:
+        payload = base64.b64decode(normalized_value)
+        if len(payload) <= DES.block_size:
+            return normalized_value
+
+        # Split combined payload: [8-byte IV][ciphertext bytes...]
+        iv = payload[:DES.block_size]
+        encrypted = payload[DES.block_size:]
+        cipher = DES.new(get_des_key_bytes(), DES.MODE_CBC, iv=iv)
+        decrypted = unpad(cipher.decrypt(encrypted), DES.block_size)
+        return decrypted.decode('utf-8')
+    except Exception:
+        # Legacy compatibility: old rows may still contain plain text values.
+        return normalized_value
+
+
+def passwords_match(stored_password, incoming_password):
+    """Compare a stored DES-encrypted password against a candidate password."""
+    if incoming_password is None:
+        return False
+
+    stored_value = '' if stored_password is None else str(stored_password)
+    incoming_value = str(incoming_password)
+    # Backward compatibility for rows created before encryption rollout.
+    if stored_value == incoming_value:
+        return True
+
+    try:
+        return decrypt_des_text(stored_value) == incoming_value
+    except Exception:
+        return False
+
+
+@csrf_exempt
+def get_des_key(request):
+    if request.method != 'GET':
+        return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
+
+    return JsonResponse({
+        'status': 'success',
+        'des_key': getattr(settings, 'DES_SECRET_KEY', '')
+    })
+
+
 @csrf_exempt
 def login_user(request):
     """
@@ -146,6 +234,7 @@ def login_user(request):
                     'username': 'rootadmin',
                     'first_name': 'Root',
                     'last_name': 'Admin',
+                    'email': '',
                     'role': root_role,
                     'identifier': 'System Root',
                     'auth_token': issue_auth_token('rootadmin', root_role)
@@ -157,14 +246,15 @@ def login_user(request):
         except UserRegistration.DoesNotExist:
             return JsonResponse({'status': 'error', 'message': 'User not found'}, status=404)
 
-        if user.password == incoming_pass:
+        if passwords_match(user.password, incoming_pass):
             user_role = (getattr(user, 'role', '') or '').strip().lower()
             return JsonResponse({
                 'status': 'success',
                 'user': {
                     'username': user.username,
-                    'first_name': getattr(user, 'firstName', getattr(user, 'first_name', '')),
-                    'last_name': getattr(user, 'lastName', getattr(user, 'last_name', '')),
+                    'first_name': decrypt_des_text(getattr(user, 'firstName', getattr(user, 'first_name', ''))),
+                    'last_name': decrypt_des_text(getattr(user, 'lastName', getattr(user, 'last_name', ''))),
+                    'email': decrypt_des_text(getattr(user, 'email', '')),
                     'role': user_role,
                     'identifier': user.identifier,
                     'auth_token': issue_auth_token(user.username, user_role)
@@ -215,11 +305,11 @@ def create_personnel_account(request):
             return JsonResponse({'status': 'error', 'message': 'Username already exists.'}, status=400)
 
         UserRegistration.objects.create(
-            first_name=first_name,
-            last_name=last_name,
-            email=email,
+            first_name=encrypt_des_text(first_name),
+            last_name=encrypt_des_text(last_name),
+            email=encrypt_des_text(email),
             username=username,
-            password=password,
+            password=encrypt_des_text(password),
             identifier='Personnel Account',
             role=role
         )
@@ -267,10 +357,10 @@ def update_profile(request):
                         'message': 'New password must be at least 8 characters long and include at least one uppercase letter and one number.'
                     }, status=400)
 
-                if user.password != incoming_old_password:
+                if not passwords_match(user.password, incoming_old_password):
                     return JsonResponse({'status': 'error', 'message': 'Old password is incorrect.'}, status=400)
 
-                user.password = incoming_new_password
+                user.password = encrypt_des_text(incoming_new_password)
 
             user.save()
             return JsonResponse({'status': 'success'})
@@ -296,11 +386,11 @@ def register_user(request):
                 }, status=400)
 
             UserRegistration.objects.create(
-                first_name=get_val(data, 'firstName', 'first_name'),
-                last_name=get_val(data, 'lastName', 'last_name'),
-                email=data.get('email'),
+                first_name=encrypt_des_text(get_val(data, 'firstName', 'first_name')),
+                last_name=encrypt_des_text(get_val(data, 'lastName', 'last_name')),
+                email=encrypt_des_text(data.get('email')),
                 username=data.get('username'),
-                password=incoming_password,
+                password=encrypt_des_text(incoming_password),
                 identifier=data.get('identifier'),
                 role=data.get('role')
             )

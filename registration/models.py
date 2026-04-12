@@ -7,9 +7,9 @@ class UserRegistration(models.Model):
     Handles both student and guest user accounts.
     """
     # Personal Information
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
-    email = models.EmailField(max_length=150)
+    first_name = models.TextField()
+    last_name = models.TextField()
+    email = models.TextField()
 
     # Authentication Credentials
     username = models.CharField(max_length=100, unique=True)

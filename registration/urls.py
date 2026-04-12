@@ -5,6 +5,9 @@ urlpatterns = [
     # API endpoints for the UA Parking Management System
     # All routes are prefixed with '/api/' from main urls.py
 
+    # DES encryption key bootstrap
+    path('des-key/', views.get_des_key, name='des_key'),
+
     # Authentication endpoints
     path('register/', views.register_user, name='register'),  # User registration
     path('login/', views.login_user, name='login'),  # User authentication
