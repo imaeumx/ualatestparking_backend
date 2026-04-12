@@ -2,6 +2,7 @@ import json
 import base64
 import secrets
 import re
+import hashlib
 from Crypto.Cipher import DES
 from Crypto.Util.Padding import pad, unpad
 from datetime import date
@@ -176,8 +177,34 @@ def decrypt_des_text(cipher_text):
         decrypted = unpad(cipher.decrypt(encrypted), DES.block_size)
         return decrypted.decode('utf-8')
     except Exception:
-        # Legacy compatibility: old rows may still contain plain text values.
-        return normalized_value
+        pass
+
+    # Legacy compatibility: CryptoJS/OpenSSL salted DES payloads
+    # Format: base64("Salted__" + 8-byte salt + ciphertext bytes)
+    try:
+        payload = base64.b64decode(normalized_value)
+        if payload.startswith(b'Salted__') and len(payload) > 16:
+            salt = payload[8:16]
+            encrypted = payload[16:]
+            passphrase = (getattr(settings, 'DES_SECRET_KEY', '') or '').encode('utf-8')
+
+            # OpenSSL EVP_BytesToKey with MD5 (compatible with CryptoJS passphrase mode)
+            derived = b''
+            block = b''
+            while len(derived) < 16:  # 8 bytes DES key + 8 bytes IV
+                block = hashlib.md5(block + passphrase + salt).digest()
+                derived += block
+
+            key = derived[:8]
+            iv = derived[8:16]
+            cipher = DES.new(key, DES.MODE_CBC, iv=iv)
+            decrypted = unpad(cipher.decrypt(encrypted), DES.block_size)
+            return decrypted.decode('utf-8')
+    except Exception:
+        pass
+
+    # Legacy plain text or unsupported encrypted value.
+    return normalized_value
 
 
 def passwords_match(stored_password, incoming_password):
