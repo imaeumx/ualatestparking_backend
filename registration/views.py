@@ -275,13 +275,25 @@ def login_user(request):
 
         if passwords_match(user.password, incoming_pass):
             user_role = (getattr(user, 'role', '') or '').strip().lower()
+            
+            # For rootadmin: return plain text values
+            # For admin/guard: decrypt the values
+            if user_role == 'root_admin':
+                first_name_val = getattr(user, 'firstName', getattr(user, 'first_name', ''))
+                last_name_val = getattr(user, 'lastName', getattr(user, 'last_name', ''))
+                email_val = getattr(user, 'email', '')
+            else:
+                first_name_val = decrypt_des_text(getattr(user, 'firstName', getattr(user, 'first_name', '')))
+                last_name_val = decrypt_des_text(getattr(user, 'lastName', getattr(user, 'last_name', '')))
+                email_val = decrypt_des_text(getattr(user, 'email', ''))
+            
             return JsonResponse({
                 'status': 'success',
                 'user': {
                     'username': user.username,
-                    'first_name': decrypt_des_text(getattr(user, 'firstName', getattr(user, 'first_name', ''))),
-                    'last_name': decrypt_des_text(getattr(user, 'lastName', getattr(user, 'last_name', ''))),
-                    'email': decrypt_des_text(getattr(user, 'email', '')),
+                    'first_name': first_name_val,
+                    'last_name': last_name_val,
+                    'email': email_val,
                     'role': user_role,
                     'identifier': user.identifier,
                     'auth_token': issue_auth_token(user.username, user_role)
@@ -299,6 +311,8 @@ def create_personnel_account(request):
     """
     Create a new personnel account (admin or guard).
     Only root admin can perform this action.
+    - Rootadmin accounts: plain text (no encryption)
+    - Admin/Guard accounts: encrypted fields
     """
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
@@ -316,8 +330,8 @@ def create_personnel_account(request):
         last_name = (data.get('last_name') or '').strip()
         email = (data.get('email') or '').strip()
 
-        if role not in ('admin', 'guard'):
-            return JsonResponse({'status': 'error', 'message': 'Role must be admin or guard.'}, status=400)
+        if role not in ('admin', 'guard', 'root_admin'):
+            return JsonResponse({'status': 'error', 'message': 'Role must be admin, guard, or root_admin.'}, status=400)
 
         if not all([username, password, first_name, last_name, email]):
             return JsonResponse({'status': 'error', 'message': 'Missing required fields.'}, status=400)
@@ -331,15 +345,29 @@ def create_personnel_account(request):
         if UserRegistration.objects.filter(username__iexact=username).exists():
             return JsonResponse({'status': 'error', 'message': 'Username already exists.'}, status=400)
 
-        UserRegistration.objects.create(
-            first_name=encrypt_des_text(first_name),
-            last_name=encrypt_des_text(last_name),
-            email=encrypt_des_text(email),
-            username=username,
-            password=encrypt_des_text(password),
-            identifier='Personnel Account',
-            role=role
-        )
+        # For rootadmin: plain text (no encryption)
+        # For admin/guard: encrypted fields
+        if role == 'root_admin':
+            UserRegistration.objects.create(
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                username=username,
+                password=password,
+                identifier='Personnel Account',
+                role=role
+            )
+        else:
+            # admin or guard - use encryption
+            UserRegistration.objects.create(
+                first_name=encrypt_des_text(first_name),
+                last_name=encrypt_des_text(last_name),
+                email=encrypt_des_text(email),
+                username=username,
+                password=encrypt_des_text(password),
+                identifier='Personnel Account',
+                role=role
+            )
 
         return JsonResponse({'status': 'success', 'message': f'{role.title()} account created successfully.'})
     except Exception as e:
@@ -387,7 +415,13 @@ def update_profile(request):
                 if not passwords_match(user.password, incoming_old_password):
                     return JsonResponse({'status': 'error', 'message': 'Old password is incorrect.'}, status=400)
 
-                user.password = encrypt_des_text(incoming_new_password)
+                # For rootadmin: store plain text password
+                # For admin/guard: encrypt the password
+                user_role = (getattr(user, 'role', '') or '').strip().lower()
+                if user_role == 'root_admin':
+                    user.password = incoming_new_password
+                else:
+                    user.password = encrypt_des_text(incoming_new_password)
 
             user.save()
             return JsonResponse({'status': 'success'})
