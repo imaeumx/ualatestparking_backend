@@ -76,15 +76,15 @@ def decrypt_cryptojs_salted_with_passphrase(cipher_text, passphrase):
 class Command(BaseCommand):
     help = (
         'Normalize VehicleApplication owner_name/plate_number encryption so all decrypt with the current '
-        'DES_SECRET_KEY. Tries current key decrypt first, then legacy key fallback.'
+        'DES_SECRET_KEY. Tries current key decrypt first, then an optional legacy key fallback.'
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--legacy-key',
             type=str,
-            default='UA-SECRET-KEY',
-            help='Legacy passphrase/key to try for old rows (default: UA-SECRET-KEY).',
+            default='',
+            help='Legacy passphrase/key to try for old rows. Leave blank to skip legacy fallback.',
         )
         parser.add_argument(
             '--dry-run',

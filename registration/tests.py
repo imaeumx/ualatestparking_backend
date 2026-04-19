@@ -9,6 +9,7 @@ from .views import (
 	issue_auth_token,
 	get_current_semester_range,
 	is_sticker_valid_for_current_semester,
+	passwords_match,
 )
 
 
@@ -326,7 +327,8 @@ class RegistrationApiTests(TestCase):
 
 		self.assertEqual(response.status_code, 200)
 		self.student.refresh_from_db()
-		self.assertEqual(self.student.password, 'NewPassWord1')
+		self.assertTrue(passwords_match(self.student.password, 'NewPassWord1'))
+		self.assertFalse(passwords_match(self.student.password, 'PassWord1'))
 
 	def test_update_profile_allows_admin_to_update_other_user_identifier(self):
 		new_identifier = '2024-0001 | College - BSCS'
